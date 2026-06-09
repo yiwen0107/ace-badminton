@@ -1,0 +1,1051 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+  <title>ACE Badminton Scheduler</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <style>
+    @media print {
+      @page{size:A4 landscape;margin:6mm}
+      body{-webkit-print-color-adjust:exact;print-color-adjust:exact;background:#fff;margin:0;padding:0}
+    }
+  </style>
+</head>
+<body class="bg-slate-50 text-slate-900 text-sm">
+<div class="max-w-6xl mx-auto p-4 sm:p-6">
+
+  <!-- Header -->
+  <div class="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
+    <div>
+      <div class="text-xl font-bold">🏸 ACE Badminton Scheduler</div>
+      <div class="text-sm text-slate-500 mt-0.5">Saturday court planning</div>
+    </div>
+    <div class="no-print flex w-full sm:w-auto rounded-lg border border-slate-200 bg-white p-1">
+      <button id="tabBtn1" class="flex-1 sm:flex-none text-center px-3 py-1.5 text-sm rounded-md">Attendance</button>
+      <button id="tabBtn3" class="flex-1 sm:flex-none text-center px-3 py-1.5 text-sm rounded-md">Schedule</button>
+      <button id="tabBtn2" class="flex-1 sm:flex-none text-center px-3 py-1.5 text-sm rounded-md">Players</button>
+      <button id="tabBtn4" class="flex-1 sm:flex-none text-center px-3 py-1.5 text-sm rounded-md">Payments</button>
+    </div>
+  </div>
+
+  <!-- Toast -->
+  <div id="toast" class="hidden mt-3 rounded-lg border px-3 py-2 text-sm"></div>
+
+  <!-- Tab panels -->
+  <div id="tab1" class="mt-4"></div>
+  <div id="tab2" class="mt-4 hidden"></div>
+  <div id="tab3" class="mt-4 hidden"></div>
+  <div id="tab4" class="mt-4 hidden"></div>
+</div>
+
+<!-- Player dialog -->
+<dialog id="playerDialog" class="rounded-xl border border-slate-200 p-0 w-[min(520px,94vw)] backdrop:bg-black/30">
+  <div class="bg-white rounded-xl overflow-hidden">
+    <div class="px-4 py-3 border-b border-slate-200 flex items-center justify-between">
+      <div id="dlgTitle" class="font-semibold">Add Player</div>
+      <button id="dlgClose" class="px-2 py-1 rounded text-slate-400 hover:bg-slate-100">✕</button>
+    </div>
+    <div class="p-4 grid grid-cols-2 gap-3">
+      <div class="col-span-2">
+        <div class="text-xs text-slate-500 mb-1 font-medium">Name</div>
+        <input id="dlgName" class="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-slate-400" placeholder="e.g. Zhang Wei"/>
+      </div>
+      <div>
+        <div class="text-xs text-slate-500 mb-1 font-medium">Gender</div>
+        <select id="dlgGender" class="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-slate-400">
+          <option value="M">Male (M)</option>
+          <option value="F">Female (F)</option>
+        </select>
+      </div>
+      <div>
+        <div class="text-xs text-slate-500 mb-1 font-medium">Level</div>
+        <select id="dlgLevel" class="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-slate-400">
+          <option value="A1">A1 – Strongest</option>
+          <option value="A2">A2 – Strong</option>
+          <option value="M" selected>M – Middle</option>
+          <option value="B">B – Beginner</option>
+        </select>
+      </div>
+      <div class="col-span-2 flex items-center gap-2">
+        <input id="dlgSingles" type="checkbox" class="w-4 h-4 accent-emerald-600"/>
+        <label for="dlgSingles" class="text-sm select-none cursor-pointer">Prefers singles</label>
+      </div>
+    </div>
+    <div class="px-4 py-3 border-t border-slate-200 flex justify-end gap-2 bg-slate-50">
+      <button id="dlgCancel" class="px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-sm hover:bg-slate-50">Cancel</button>
+      <button id="dlgSave" class="px-3 py-1.5 rounded-lg bg-slate-900 text-white text-sm hover:bg-slate-700">Save</button>
+    </div>
+  </div>
+</dialog>
+
+<script>
+// ── Constants ──────────────────────────────────────────────────────────────
+const SK = { players:"ace_pl_v4", slot:s=>`ace_sl_v4_${s}`, pay:"ace_pay_v4" };
+const LEVELS = ["A1","A2","M","B"];
+const LR = {A1:4,A2:3,M:2,B:1};
+const LL = {A1:"A1 Strongest",A2:"A2 Strong",M:"M Middle",B:"B Beginner"};
+
+// ── Default players ────────────────────────────────────────────────────────
+const RAW = [
+  ["Joe","M","A1"],["Yiwen","F","A1"],["David Yang","M","A1"],
+  ["Mike Yang","M","A2"],["Simon","M","A1"],["Jenny","F","A1"],
+  ["Esther","F","A1"],["Doudou","F","A1"],["Steven","M","A2"],
+  ["Geev","M","A1"],["Anna","F","A1"],["Zita","F","A2"],
+  ["Iris","F","A2"],["Reza","M","A1"],["Yuu","M","A1"],
+  ["Jing","M","A1"],["Colbin","M","A1"],["Navine","M","A2"],
+  ["David Jin","M","A2"],["Amanda","F","M"],["Peter","M","M"],
+  ["Bobo","F","M"],["Liling","F","M"],["Jo","F","M"],
+  ["Tina","F","M"],["David Dai","M","M"],["Angelina","F","M"],
+  ["Aobing","F","M"],["Sifan","M","M"],["Zebiao","M","M"],
+  ["Steve","M","M"],["Yixin","F","M"],["Shail","M","B"],
+  ["Emil","M","B"],["Jinsong","M","B"],["Bingyu","F","B"],
+  ["Christy","F","B"],["Arya","F","M"],["Konik","M","A2"],
+  ["Mobarac","M","A2"],["Ty","M","A2"],["Taotao","M","B"],
+  ["Claudia","F","M"],["Ting","M","M"],["Hou","M","M"],
+  ["Vincent","M","B"],["Vic","M","M"],["Judy","F","A2"],
+  ["Reid","M","A2"],["Arthur","M","A2"],["Mimi","F","M"],
+  ["Yoyo","F","M"],["Gerhrad","M","A1"],["Julia","F","A1"],
+  ["Han","M","M"],["Jeff","M","A2"],["JJ","M","M"],
+  ["Josiah","M","A1"],["Amy","M","A1"],["George","M","M"]
+];
+const uid = ()=>Date.now().toString(36)+"_"+Math.random().toString(36).slice(2,7);
+const esc = s=>String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+const $ = id=>document.getElementById(id);
+const safeJ = (s,fb)=>{try{return JSON.parse(s)}catch{return fb}};
+const clamp = (v,fb,mn,mx)=>{const n=parseInt(v,10);return isFinite(n)?Math.min(Math.max(n,mn),mx):fb};
+
+// ── Storage ────────────────────────────────────────────────────────────────
+function loadPlayers(){
+  const d=safeJ(localStorage.getItem(SK.players)||"",null);
+  if(!Array.isArray(d)) return RAW.map(([name,gender,level])=>({id:uid(),name,gender,level,preferSingle:false}));
+  return d.map(p=>({id:String(p.id||uid()),name:String(p.name||"").trim(),gender:p.gender==="F"?"F":"M",level:LEVELS.includes(p.level)?p.level:"M",preferSingle:p.preferSingle===true||p.preferSingle===1})).filter(p=>p.name);
+}
+function savePlayers(ps){localStorage.setItem(SK.players,JSON.stringify(ps))}
+function defSlot(s){return{slot:s,maxPlayers:30,rounds:4,courts:5,minutes:20,allowSingles:false,selectedIds:[],schedule:null}}
+function loadSlot(s){
+  const d=safeJ(localStorage.getItem(SK.slot(s))||"",null);
+  const b=defSlot(s);
+  if(!d)return b;
+  return{...b,maxPlayers:clamp(d.maxPlayers,b.maxPlayers,4,200),rounds:clamp(d.rounds,b.rounds,1,40),courts:clamp(d.courts,b.courts,1,20),minutes:clamp(d.minutes,b.minutes,5,60),allowSingles:Boolean(d.allowSingles),selectedIds:Array.isArray(d.selectedIds)?d.selectedIds.map(String):[],schedule:d.schedule||null};
+}
+function saveSlot(ss){localStorage.setItem(SK.slot(ss.slot),JSON.stringify(ss))}
+function loadPay(){return safeJ(localStorage.getItem(SK.pay)||"{}",{})}
+function savePay(p){localStorage.setItem(SK.pay,JSON.stringify(p))}
+
+// ── App state ──────────────────────────────────────────────────────────────
+let players=[], slot="19", ss=null, tab="tab1", editingId=null, pSearch="", pSort="level";
+
+function pMap(){const m=new Map();players.forEach(p=>m.set(p.id,p));return m}
+function selPlayers(){const m=pMap();return(ss.selectedIds||[]).map(id=>m.get(id)).filter(Boolean)}
+function fmtMoney(n){return"R"+Number(n||0).toFixed(2)}
+
+// ── Toast ──────────────────────────────────────────────────────────────────
+let toastT;
+function toast(msg,type="info"){
+  const t=$("toast");
+  t.className="mt-3 rounded-lg border px-3 py-2 text-sm "+({error:"border-rose-200 bg-rose-50 text-rose-700",success:"border-emerald-200 bg-emerald-50 text-emerald-700",info:"border-slate-200 bg-white text-slate-700"}[type]);
+  t.textContent=msg; t.classList.remove("hidden");
+  clearTimeout(toastT); toastT=setTimeout(()=>t.classList.add("hidden"),3000);
+}
+
+// ── Tab / slot switching ───────────────────────────────────────────────────
+function setTab(id){
+  ["tab1","tab2","tab3","tab4"].forEach(t=>{$(t).classList.toggle("hidden",t!==id)});
+  [["tabBtn1","tab1"],["tabBtn2","tab2"],["tabBtn3","tab3"],["tabBtn4","tab4"]].forEach(([btn,t])=>{
+    $(btn).className="flex-1 sm:flex-none text-center px-3 py-1.5 text-sm rounded-md "+(t===id?"bg-slate-900 text-white":"text-slate-700 hover:bg-slate-100");
+  });
+  tab=id;
+}
+function setSlot(s){
+  slot=s; ss=loadSlot(s);
+  render();
+}
+
+// ── SCHEDULING (Codex logic + balanced rest) ───────────────────────────────
+function buildSchedule(players,cfg){
+  const n=players.length, courts=cfg.courts, rounds=cfg.rounds;
+
+  // Calculate effective players per round considering singles courts
+  // Singles use 2 players, doubles use 4. Estimate singles courts per round for rest calc.
+  const is21slot = cfg.slot === "21";
+  const estSingles = !is21slot ? 0 : n >= 23 ? 0 : n >= 19 ? 1 : 2;
+  const estDoubles = courts - estSingles;
+  const maxOnEst = Math.min(n, estDoubles * 4 + estSingles * 2);
+  const restPR = Math.max(0, n - maxOnEst);
+  const totalRest = restPR * rounds;
+
+  // Rest targets: base + leftover to weakest
+  const tgt=new Map(), base=Math.floor(totalRest/n);
+  players.forEach(p=>tgt.set(p.id,base));
+  let lft=totalRest-base*n;
+  const byWeak=players.slice().sort((a,b)=>LR[a.level]-LR[b.level]||a.name.localeCompare(b.name));
+  for(let i=0;lft>0;i++,lft--) tgt.set(byWeak[i%byWeak.length].id, tgt.get(byWeak[i%byWeak.length].id)+1);
+
+  const stats=new Map(players.map(p=>[p.id,{plays:0,rests:0,lastRest:false,singlesPlays:0}]));
+  const usedG=new Set(), usedSinglesPairs=new Map(), rounds_out=[], warnings=[];
+  const startMin=cfg.slot==="21"?21*60:19*60;
+  const fmt=t=>`${String(Math.floor(t/60)).padStart(2,"0")}:${String(t%60).padStart(2,"0")}`;
+
+  for(let rNo=1;rNo<=rounds;rNo++){
+    // Who must play (rested last round)
+    const mustPlay=new Set(players.filter(p=>stats.get(p.id).lastRest).map(p=>p.id));
+    const elig=players.filter(p=>!mustPlay.has(p.id));
+    elig.sort((a,b)=>{
+      const na=tgt.get(a.id)-stats.get(a.id).rests, nb=tgt.get(b.id)-stats.get(b.id).rests;
+      if(na!==nb)return nb-na;
+      return LR[a.level]-LR[b.level]||a.name.localeCompare(b.name);
+    });
+    const resters=[];
+    for(const p of elig){
+      if(resters.length>=restPR)break;
+      const s=stats.get(p.id);
+      const t=tgt.get(p.id);
+      // Only pick as rester if still at or below target (hard cap: no one exceeds target+1 while others are below)
+      const anyoneUnderTarget=elig.some(q=>!resters.includes(q)&&stats.get(q.id).rests<tgt.get(q.id));
+      if(s.rests<t||(s.rests===t&&!anyoneUnderTarget))resters.push(p);
+    }
+    // Fallback: if still short, fill from eligible regardless
+    if(resters.length<restPR){
+      const ri=new Set(resters.map(p=>p.id));
+      // Among remaining eligible, prefer those with lowest rests
+      const remaining=elig.filter(p=>!ri.has(p.id)).sort((a,b)=>stats.get(a.id).rests-stats.get(b.id).rests);
+      for(const p of remaining){if(resters.length>=restPR)break;resters.push(p);}
+    }
+    const rIds=new Set(resters.map(p=>p.id));
+
+    // Build pool (sorted: last-resters first, then fewest plays)
+    let pool=players.filter(p=>!rIds.has(p.id)).map(p=>({...p,meta:stats.get(p.id)}));
+    pool.sort((a,b)=>{
+      if(a.meta.lastRest!==b.meta.lastRest)return a.meta.lastRest?-1:1;
+      if(a.meta.plays!==b.meta.plays)return a.meta.plays-b.meta.plays;
+      return LR[a.level]-LR[b.level];
+    });
+
+    const courts_out=[];
+
+    // ══════════════════════════════════════════════════════════════════════
+    // SINGLES QUOTA  (21:00 slot only, preferSingle players only)
+    // ──────────────────────────────────────────────────────────────────────
+    // 19:00 slot  → always 0 (no singles ever)
+    // 21:00 slot:
+    //   n ≥ 23   → 0 singles courts
+    //   19 ≤ n < 23 → max 1 singles court
+    //   n < 19   → max 2 singles courts
+    // ══════════════════════════════════════════════════════════════════════
+    const maxSinglesCourts = (cfg.slot !== "21") ? 0
+                           : (n >= 23)           ? 0
+                           : (n >= 19)           ? 1
+                           :                       2;
+
+    // ── STEP 1: Singles FIRST — ONLY preferSingle===true players ─────────
+    if(maxSinglesCourts > 0){
+      const isSingleEligible = p => p.preferSingle === true || p.preferSingle === 1;
+      const pairKey = (a,b) => [a.id,b.id].sort().join("|");
+      const eligibleForSingles = pool.filter(isSingleEligible);
+
+      let singlesTarget = 0;
+      for(let s = 1; s <= maxSinglesCourts; s++){
+        if(eligibleForSingles.length < s * 2) break;
+        const afterSingles  = pool.length - s * 2;
+        const doublesCourts = courts - s;
+        if(doublesCourts > 0 && afterSingles < doublesCourts * 4) break;
+        singlesTarget = s;
+      }
+
+      for(let i = 0; i < singlesTarget; i++){
+        const avail = pool
+          .filter(isSingleEligible)
+          .sort((a,b) => {
+            const spA = stats.get(a.id)?.singlesPlays ?? 0;
+            const spB = stats.get(b.id)?.singlesPlays ?? 0;
+            return spA !== spB ? spA - spB : (a.meta?.plays??0) - (b.meta?.plays??0);
+          });
+        if(avail.length < 2) break;
+        const pr = pickPair(avail.slice(0, 8), avail, usedSinglesPairs, stats);
+        if(!pr) break;
+        courts_out.push({court: courts_out.length + 1, type:"Singles", players: pr});
+        const pk = pairKey(pr[0], pr[1]);
+        usedSinglesPairs.set(pk, (usedSinglesPairs.get(pk)??0) + 1);
+        pr.forEach(p => { const s=stats.get(p.id); if(s) s.singlesPlays=(s.singlesPlays??0)+1; });
+        const used = new Set(pr.map(p => p.id));
+        pool = pool.filter(p => !used.has(p.id));
+      }
+    }
+
+    // ── STEP 2: Fill remaining courts with doubles ─────────────────────
+    // 19:00: force-fill all courts (relax level rules if needed)
+    // 21:00: only fill if a legal group exists, leave empty otherwise
+    for(let c = courts_out.length + 1; c <= courts && pool.length >= 4; c++){
+      let g = pickGroup(pool, usedG);
+      if(!g && cfg.slot === "19"){
+        // Force-fill: pick best 4 ignoring level rules (last resort for 19:00)
+        const lim = pool.slice(0, Math.min(pool.length, 12));
+        let best = null, bsc = Infinity;
+        for(let a=0;a<lim.length-3;a++)for(let b=a+1;b<lim.length-2;b++)for(let c2=b+1;c2<lim.length-1;c2++)for(let d=c2+1;d<lim.length;d++){
+          const gg=[lim[a],lim[b],lim[c2],lim[d]];
+          const s=score(gg)+(usedG.has(gKey(gg))?300:0)+500; // +500 = last resort marker
+          if(s<bsc){best=gg;bsc=s;}
+        }
+        g = best;
+      }
+      if(!g) break;
+      courts_out.push({court: c, type: dType(g), players: g});
+      usedG.add(gKey(g));
+      const used = new Set(g.map(p => p.id));
+      pool = pool.filter(p => !used.has(p.id));
+    }
+
+    // ── STEP 3: Spare court fill ───────────────────────────────────────────
+    // ONLY fills if preferSingle===true players are available. No fallback ever.
+    // Respects max 2 repeats per singles pair.
+    {
+      const isSingleEligible = p => p.preferSingle === true || p.preferSingle === 1;
+      const pairKey = (a,b) => [a.id,b.id].sort().join("|");
+      const singlesNow = courts_out.filter(c => c.type === "Singles").length;
+      if(courts_out.length < courts && singlesNow < maxSinglesCourts){
+        const avail = pool
+          .filter(isSingleEligible)
+          .sort((a,b) => {
+            const spA = stats.get(a.id)?.singlesPlays ?? 0;
+            const spB = stats.get(b.id)?.singlesPlays ?? 0;
+            return spA !== spB ? spA - spB : (a.meta?.plays??0) - (b.meta?.plays??0);
+          });
+        if(avail.length >= 2){
+          const pr = pickPair(avail.slice(0, 8), avail, usedSinglesPairs, stats);
+          if(pr){
+            courts_out.push({court: courts_out.length + 1, type:"Singles", players: pr});
+            const pk = pairKey(pr[0], pr[1]);
+            usedSinglesPairs.set(pk, (usedSinglesPairs.get(pk)??0) + 1);
+            pr.forEach(p => { const s=stats.get(p.id); if(s) s.singlesPlays=(s.singlesPlays??0)+1; });
+            const used = new Set(pr.map(p => p.id));
+            pool = pool.filter(p => !used.has(p.id));
+          }
+        }
+      }
+    }
+
+    const playing=new Set(courts_out.flatMap(c=>c.players.map(p=>p.id)));
+    players.forEach(p=>{const s=stats.get(p.id);if(playing.has(p.id)){s.plays++;s.lastRest=false}else{s.rests++;s.lastRest=true}});
+    const t0=startMin+(rNo-1)*cfg.minutes, t1=startMin+rNo*cfg.minutes;
+    rounds_out.push({round:rNo,time:`${fmt(t0)}–${fmt(t1)}`,courts:courts_out,resters:players.filter(p=>!playing.has(p.id))});
+  }
+
+  if(n>maxOnEst) warnings.push(`${n} players selected; max ${maxOnEst} per round — rest auto-balanced.`);
+  if(cfg.slot==="19") warnings.push("Fitness training 20:50–21:10 uses Court 1 & 2. Adjust on-site.");
+
+  return{slot:cfg.slot,rounds:rounds_out,warnings,playerStats:players.map(p=>({...p,...stats.get(p.id),target:tgt.get(p.id)}))};
+}
+
+function gKey(g){return g.map(p=>p.id).sort().join("|")}
+
+// HARD rule: only skip truly impossible combinations
+// B+A1 diff=3 is hard-blocked; B+A2 diff=2 is now a soft penalty (allowed as last resort)
+function illegal(g){
+  const lvls=g.map(p=>LR[p.level]);
+  const mn=Math.min(...lvls), mx=Math.max(...lvls);
+  // Only hard-block diff ≥ 3 (B=1 vs A1=4)
+  if(mx-mn>=3) return true;
+  return false;
+}
+
+/*
+ * Score — LOWER is better.
+ *
+ * Priority order:
+ *  1. Level balance — B players should be with lowest available levels
+ *     B+B+M+M = ideal for B players (spread=1) → small penalty
+ *     B+A2 = large penalty (but allowed as last resort, no longer hard-blocked)
+ *     B+A1 = hard-blocked (diff=3, illegal)
+ *  2. Gender balance: 2+2 (XD/MD/WD) = 0, 3+1 = +500
+ *  3. Repeat group penalty (added in pickGroup)
+ *  4. Fairness (fewer plays preferred)
+ *  5. Rest bonus (rested last round preferred)
+ */
+function score(g){
+  const r=g.map(p=>LR[p.level]||1).sort((a,b)=>a-b);
+  const sp=r[3]-r[0];
+  const hasB=g.some(p=>p.level==="B");
+
+  // Level spread penalty
+  // B players: ideal with other B or M (sp≤1), penalise heavily if with A2 (sp=2)
+  // Others: sp=0 ideal, sp=1 small, sp=2 larger
+  let lvlPenalty;
+  if(hasB){
+    lvlPenalty = sp===0 ? 0 : sp===1 ? 40 : 300; // B+A2 = 300 (last resort)
+  } else {
+    lvlPenalty = sp===0 ? 0 : sp===1 ? 60 : 180;
+  }
+
+  // Team balance: want (lo+hi) ≈ (mid1+mid2)
+  const teamGap = Math.abs((r[0]+r[3])-(r[1]+r[2]));
+
+  // Gender: 2+2 = 0, 3+1 = huge penalty
+  const women=g.filter(p=>p.gender==="F").length;
+  const genderPenalty = (women===1||women===3) ? 500 : 0;
+
+  // Fairness: prefer players with fewer plays
+  const fair=g.reduce((s,p)=>s+(p.meta?.plays??0)*4,0);
+
+  // Rest bonus: strongly prefer those who rested last round
+  const restBonus=-g.filter(p=>p.meta?.lastRest).length*30;
+
+  return lvlPenalty + teamGap*10 + genderPenalty + fair + restBonus;
+}
+
+function dType(g){const w=g.filter(p=>p.gender==="F").length;return w===4?"WD":w===0?"MD":w===2?"XD":"Doubles"}
+
+function pickGroup(pool,used){
+  if(pool.length<4)return null;
+  const lim=pool.slice(0,Math.min(pool.length,12));
+  let best=null,bsc=Infinity;
+  for(let a=0;a<lim.length-3;a++)for(let b=a+1;b<lim.length-2;b++)for(let c=b+1;c<lim.length-1;c++)for(let d=c+1;d<lim.length;d++){
+    const g=[lim[a],lim[b],lim[c],lim[d]];
+    if(illegal(g))continue;
+    const s=score(g)+(used.has(gKey(g))?300:0);
+    if(s<bsc){best=g;bsc=s;}
+  }
+  // If no legal group found (only happens when only B+A1 players remain),
+  // return null — court stays empty, players rest. This is acceptable.
+  return best;
+}
+function pickPair(candidates, fullPool, usedPairs, statsMap){
+  const el = (candidates && candidates.length >= 2) ? candidates : (fullPool||[]);
+  if(el.length < 2) return null;
+  const pKey = (a,b) => [a.id,b.id].sort().join("|");
+  let best = null, bsc = Infinity;
+  for(let i = 0; i < el.length-1; i++)
+  for(let j = i+1; j < el.length; j++){
+    const a = el[i], b = el[j];
+    const lvlDiff = Math.abs(LR[a.level] - LR[b.level]);
+    const lvlPenalty = lvlDiff === 0 ? 0 : lvlDiff === 1 ? 30 : 200;
+    let genderPenalty = 0;
+    if(a.gender !== b.gender){
+      const male = a.gender==="M"?a:b, female = a.gender==="F"?a:b;
+      genderPenalty = LR[male.level]<=LR[female.level] ? 50+lvlDiff*20 : 300;
+    }
+    const timesUsed = usedPairs ? (usedPairs.get(pKey(a,b))??0) : 0;
+    const repeatPenalty = timesUsed>=2 ? 9999 : timesUsed===1 ? 80 : 0;
+    const spA = statsMap ? (statsMap.get(a.id)?.singlesPlays??0) : 0;
+    const spB = statsMap ? (statsMap.get(b.id)?.singlesPlays??0) : 0;
+    const s = lvlPenalty + genderPenalty + repeatPenalty + (spA+spB)*10;
+    if(s < bsc){ best=[a,b]; bsc=s; }
+  }
+  return bsc >= 9999 ? null : best;
+}
+
+// ── RENDER: innerHTML-based (fast) ─────────────────────────────────────────
+
+// TAB 1 — Attendance
+function renderAttendance(){
+  const m=pMap(), sel=new Set((ss.selectedIds||[]).filter(id=>m.has(id)));
+  const sp=[...sel].map(id=>m.get(id));
+  const cap=ss.maxPlayers;
+
+  const sorted=players.slice().sort((a,b)=>LR[b.level]-LR[a.level]||a.name.localeCompare(b.name));
+
+  $("tab1").innerHTML=`
+  <!-- Slot selector — only shown on Attendance tab -->
+  <div class="no-print mb-3 flex flex-wrap items-center gap-2">
+    <div class="inline-flex rounded-lg border border-slate-200 bg-white p-1">
+      <button id="slotBtn19" class="px-3 py-1.5 text-sm rounded-md ${slot==="19"?"bg-slate-900 text-white":"text-slate-700 hover:bg-slate-100"}">19:00</button>
+      <button id="slotBtn21" class="px-3 py-1.5 text-sm rounded-md ${slot==="21"?"bg-slate-900 text-white":"text-slate-700 hover:bg-slate-100"}">21:00</button>
+    </div>
+    <div class="text-sm text-slate-500">${slot==="19"?"19:00–21:00 · Early session":"21:00–23:00 · Late session"}</div>
+  </div>
+  <div class="grid grid-cols-1 lg:grid-cols-3 gap-3">
+
+    <!-- Settings -->
+    <div class="rounded-xl border border-slate-200 bg-white p-4">
+      <div class="font-semibold">Session Settings</div>
+      <div class="mt-3 grid grid-cols-2 gap-3">
+        ${["maxPlayers:Max players:4:200","rounds:Rounds:1:40","courts:Courts:1:20","minutes:Min / round:5:60"].map(f=>{
+          const[k,lbl,mn,mx]=f.split(":");
+          return`<div><div class="text-xs text-slate-500 mb-1 font-medium">${lbl}</div>
+          <input class="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-slate-400 setting-field"
+            type="number" min="${mn}" max="${mx}" value="${ss[k]}" data-key="${k}"/></div>`;
+        }).join("")}
+      </div>
+      <div class="mt-3 flex items-center justify-between gap-2 flex-wrap">
+        <div class="text-sm text-slate-600">Singles (21:00 slot only)</div>
+        <div class="text-xs text-slate-400">≥23: none · 19–22: 1 court · &lt;19: 2 courts</div>
+      </div>
+      <div class="mt-4 grid grid-cols-2 gap-2">
+        ${[`Selected: ${sp.length} / ${cap}`,`M/F: ${sp.filter(p=>p.gender==="M").length}/${sp.filter(p=>p.gender==="F").length}`,`Singles: ${sp.filter(p=>p.preferSingle).length}`,sp.length>cap?`⚠ Over by ${sp.length-cap}`:sp.length===cap?`✓ Full (${cap})`:`✓ Capacity OK`].map((t,i)=>`<div class="stat-box rounded-lg border px-3 py-2 text-sm ${i===3&&sp.length>cap?"border-amber-200 bg-amber-50 text-amber-700":i===3&&sp.length===cap?"border-emerald-200 bg-emerald-50 text-emerald-700":"border-slate-200 bg-slate-50"}">${t}</div>`).join("")}
+      </div>
+    </div>
+
+    <!-- Attendance -->
+    <div class="rounded-xl border border-slate-200 bg-white p-4 lg:col-span-2">
+      <div class="flex items-center justify-between gap-2 flex-wrap">
+        <div class="font-semibold">Attendance</div>
+        <div class="flex flex-wrap gap-2">
+          <button id="attClearBtn" class="px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-sm hover:bg-slate-50">Clear all</button>
+          <button id="attAllBtn" class="px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-sm hover:bg-slate-50">Select all</button>
+          <button id="genBtn" class="px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-sm hover:bg-emerald-700 ${sp.length<4?"opacity-50 cursor-not-allowed":""}">⚡ Generate</button>
+        </div>
+      </div>
+      <div class="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-2">
+        ${sorted.map(p=>{
+          const checked=sel.has(p.id);
+          const atCap=sp.length>=cap;
+          const disabled=!checked&&atCap;
+          return`<label class="rounded-lg border px-3 py-2 flex items-center gap-3 ${checked?"border-emerald-300 bg-emerald-50 cursor-pointer hover:bg-emerald-100":disabled?"border-slate-100 bg-slate-50 opacity-40 cursor-not-allowed":"border-slate-200 bg-white cursor-pointer hover:bg-slate-50"}">
+            <input type="checkbox" class="att-cb w-4 h-4 accent-emerald-600 flex-shrink-0" data-id="${p.id}" ${checked?"checked":""} ${disabled?"disabled":""}>
+            <div class="min-w-0">
+              <div class="text-sm font-medium truncate">${esc(p.name)}</div>
+              <div class="text-xs text-slate-500">${p.gender} · ${p.level}${p.preferSingle?" · singles":""}</div>
+            </div>
+          </label>`;
+        }).join("")}
+      </div>
+      <div class="mt-4 pt-3 border-t border-slate-100 flex flex-wrap items-center gap-2">
+        <span class="text-xs text-slate-400">Copy attendance to another slot:</span>
+        <button id="attExBtn" class="px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-sm hover:bg-slate-50">Export List</button>
+        <button id="attImBtn" class="px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-sm hover:bg-slate-50">Import List</button>
+        <input id="attImFile" type="file" accept=".xlsx" class="hidden"/>
+      </div>
+    </div>
+  </div>`;
+
+  // Bind settings fields
+  document.querySelectorAll(".setting-field").forEach(inp=>{
+    inp.addEventListener("change",()=>{
+      ss[inp.dataset.key]=clamp(inp.value,ss[inp.dataset.key],Number(inp.min),Number(inp.max));
+      ss.schedule=null; saveSlot(ss); renderAttendance();
+    });
+  });
+  $("attClearBtn").addEventListener("click",()=>{ss.selectedIds=[];ss.schedule=null;saveSlot(ss);renderAttendance()});
+  $("attAllBtn").addEventListener("click",()=>{
+    ss.selectedIds=players.slice().sort((a,b)=>LR[b.level]-LR[a.level]||a.name.localeCompare(b.name)).slice(0,ss.maxPlayers).map(p=>p.id);
+    ss.schedule=null;saveSlot(ss);renderAttendance();
+  });
+  document.querySelectorAll(".att-cb").forEach(cb=>{
+    cb.addEventListener("change",()=>{
+      const cur=new Set(ss.selectedIds.filter(id=>pMap().has(id)));
+      if(cb.checked){
+        if(cur.size>=ss.maxPlayers){toast(`Max ${ss.maxPlayers} players.`,"error");cb.checked=false;return}
+        cur.add(cb.dataset.id);
+      }else{cur.delete(cb.dataset.id)}
+      ss.selectedIds=[...cur];ss.schedule=null;saveSlot(ss);
+      // only update stats without full re-render
+      updateAttStats();
+    });
+  });
+  $("genBtn").addEventListener("click",()=>{
+    const sp2=selPlayers();
+    if(sp2.length<4){toast("Select at least 4 players","error");return}
+    try{
+      const result=buildSchedule(sp2,{slot,courts:ss.courts,rounds:ss.rounds,minutes:ss.minutes});
+      ss.schedule=result; saveSlot(ss);
+      renderScheduleTab(slot);
+      setTab("tab3");
+    }catch(e){
+      console.error("Schedule error:",e);
+      toast("Generation failed: "+e.message,"error");
+    }
+  });
+  $("attExBtn").addEventListener("click",exportAttendance);
+  $("attImBtn").addEventListener("click",()=>$("attImFile").click());
+  $("attImFile").addEventListener("change",e=>{if(e.target.files[0])importAttendance(e.target.files[0]);e.target.value=""});
+  $("slotBtn19").addEventListener("click",()=>setSlot("19"));
+  $("slotBtn21").addEventListener("click",()=>setSlot("21"));
+}
+
+function updateAttStats(){
+  const m=pMap(), sel=new Set((ss.selectedIds||[]).filter(id=>m.has(id)));
+  const sp=[...sel].map(id=>m.get(id));
+  const cap=ss.maxPlayers, atCap=sp.length>=cap;
+
+  // Update stat boxes
+  const statEls=document.querySelectorAll(".stat-box");
+  if(statEls.length>=4){
+    statEls[0].textContent=`Selected: ${sp.length} / ${cap}`;
+    statEls[1].textContent=`M/F: ${sp.filter(p=>p.gender==="M").length}/${sp.filter(p=>p.gender==="F").length}`;
+    statEls[2].textContent=`Singles: ${sp.filter(p=>p.preferSingle).length}`;
+    const capEl=statEls[3];
+    if(sp.length>cap){
+      capEl.textContent=`⚠ Over by ${sp.length-cap}`;
+      capEl.className="stat-box rounded-lg border px-3 py-2 text-sm border-amber-200 bg-amber-50 text-amber-700";
+    } else if(atCap){
+      capEl.textContent=`✓ Full (${cap})`;
+      capEl.className="stat-box rounded-lg border px-3 py-2 text-sm border-emerald-200 bg-emerald-50 text-emerald-700";
+    } else {
+      capEl.textContent=`✓ Capacity OK`;
+      capEl.className="stat-box rounded-lg border px-3 py-2 text-sm border-slate-200 bg-slate-50";
+    }
+  }
+
+  // Update checkboxes: check state, color, and disable unselected when full
+  document.querySelectorAll(".att-cb").forEach(cb=>{
+    const checked=sel.has(cb.dataset.id);
+    cb.checked=checked;
+    // Disable unchecked boxes when at capacity (can't add more)
+    cb.disabled = !checked && atCap;
+    const lbl=cb.closest("label");
+    lbl.className="rounded-lg border px-3 py-2 flex items-center gap-3 "+(
+      checked?"border-emerald-300 bg-emerald-50 cursor-pointer hover:bg-emerald-100":
+      atCap?"border-slate-100 bg-slate-50 opacity-40 cursor-not-allowed":
+      "border-slate-200 bg-white cursor-pointer hover:bg-slate-50"
+    );
+  });
+}
+
+// TAB 2 — Players
+function renderPlayers(){
+  const kw=pSearch.trim().toLowerCase();
+  let list=kw?players.filter(p=>p.name.toLowerCase().includes(kw)):players.slice();
+  list=list.sort(pSort==="level"?(a,b)=>LR[b.level]-LR[a.level]||a.name.localeCompare(b.name):(a,b)=>a.name.localeCompare(b.name));
+
+  $("tab2").innerHTML=`
+  <div class="rounded-xl border border-slate-200 bg-white p-4">
+    <div class="flex flex-col sm:flex-row gap-3 items-start sm:items-center justify-between">
+      <div class="flex flex-wrap items-center gap-2">
+        <input id="pSearch" class="rounded-lg border border-slate-200 px-3 py-1.5 text-sm outline-none focus:border-slate-400 w-44" placeholder="Search…" value="${esc(pSearch)}"/>
+        <select id="pSort" class="rounded-lg border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-slate-400">
+          <option value="level" ${pSort==="level"?"selected":""}>Level</option>
+          <option value="name" ${pSort==="name"?"selected":""}>Name (A–Z)</option>
+        </select>
+      </div>
+      <button id="addBtn" class="px-3 py-1.5 rounded-lg bg-slate-900 text-white text-sm hover:bg-slate-700">+ Add Player</button>
+    </div>
+    <div class="mt-2 text-xs text-slate-400">Total: ${players.length} · Showing: ${list.length}</div>
+    <div class="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-2">
+      ${list.map(p=>`
+        <div class="rounded-lg border border-slate-200 bg-white px-3 py-2 flex items-center justify-between gap-3">
+          <div class="min-w-0">
+            <div class="text-sm font-medium truncate">${esc(p.name)}</div>
+            <div class="text-xs text-slate-500">${p.gender} · ${LL[p.level]}${p.preferSingle?" · singles":""}</div>
+          </div>
+          <div class="flex gap-2 flex-shrink-0">
+            <button class="px-2.5 py-1 rounded-lg border border-slate-200 text-xs hover:bg-slate-50 edit-btn" data-id="${p.id}">Edit</button>
+            <button class="px-2.5 py-1 rounded-lg border border-rose-200 text-xs text-rose-700 hover:bg-rose-50 del-btn" data-id="${p.id}">Delete</button>
+          </div>
+        </div>`).join("")}
+    </div>
+    <div class="mt-4 pt-4 border-t border-slate-100 flex flex-wrap items-center gap-2">
+      <span class="text-xs text-slate-400">Player list:</span>
+      <button id="exXls" class="px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-sm hover:bg-slate-50">Export Excel</button>
+      <button id="imXls" class="px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-sm hover:bg-slate-50">Import Excel</button>
+      <input id="imXlsFile" type="file" accept=".xlsx" class="hidden"/>
+    </div>
+  </div>`;
+
+  $("pSearch").addEventListener("input",e=>{
+    pSearch=e.target.value;
+    const pos=e.target.selectionStart;
+    renderPlayers();
+    const el=$("pSearch");
+    if(el){el.focus();try{el.setSelectionRange(pos,pos)}catch{}}
+  });
+  $("pSort").addEventListener("change",e=>{pSort=e.target.value;renderPlayers()});
+  $("addBtn").addEventListener("click",()=>openDlg());
+  document.querySelectorAll(".edit-btn").forEach(b=>b.addEventListener("click",()=>openDlg(players.find(p=>p.id===b.dataset.id))));
+  document.querySelectorAll(".del-btn").forEach(b=>b.addEventListener("click",()=>{
+    const p=players.find(x=>x.id===b.dataset.id);
+    if(!p||!confirm(`Delete ${p.name}?`))return;
+    players=players.filter(x=>x.id!==p.id);savePlayers(players);
+    ["19","21"].forEach(s=>{const sl=loadSlot(s);sl.selectedIds=sl.selectedIds.filter(id=>id!==p.id);saveSlot(sl)});
+    ss=loadSlot(slot);renderPlayers();
+  }));
+  $("exXls").addEventListener("click",exportPlayerXls);
+  $("imXls").addEventListener("click",()=>$("imXlsFile").click());
+  $("imXlsFile").addEventListener("change",e=>{if(e.target.files[0])importPlayerXls(e.target.files[0]);e.target.value=""});
+}
+
+// TAB 3 — Schedule
+let scheduleViewSlot = slot; // which slot is currently displayed in Schedule tab
+
+function renderScheduleTab(viewSlot){
+  if(viewSlot) scheduleViewSlot = viewSlot;
+  const viewSS = loadSlot(scheduleViewSlot);
+  const sch = viewSS.schedule;
+  const m = pMap();
+  const selCnt = viewSS.selectedIds.filter(id=>m.has(id)).length;
+
+  // Build the rounds HTML separately so we can also use it as printArea
+  function roundsHTML(sch){
+    if(!sch) return "";
+    let h = "";
+    sch.rounds.forEach(r=>{
+      h+=`<div class="rounded-xl border border-slate-200 overflow-hidden break-inside-avoid">
+        <div class="bg-emerald-50 border-b border-emerald-100 px-3 py-2 flex items-center justify-between">
+          <div class="font-semibold text-sm">Round ${r.round}</div>
+          <div class="text-xs text-slate-500">${r.time}</div>
+        </div>
+        <div class="divide-y divide-slate-100">`;
+      r.courts.forEach(c=>{
+        const badge=c.type==="XD"?"bg-purple-100 text-purple-700":c.type==="MD"?"bg-blue-100 text-blue-700":c.type==="WD"?"bg-pink-100 text-pink-700":c.type==="Singles"?"bg-amber-100 text-amber-700":"bg-emerald-100 text-emerald-700";
+        h+=`<div class="px-3 py-2.5 bg-white">
+          <div class="flex items-center justify-between mb-1.5">
+            <div class="text-xs text-slate-500 font-medium">Court ${c.court}</div>
+            <div class="text-[10px] font-bold px-1.5 py-0.5 rounded-full ${badge}">${c.type}</div>
+          </div>
+          <div class="flex flex-wrap gap-1">${c.players.map(p=>`<span class="text-xs px-1.5 py-0.5 rounded-md font-medium ${p.gender==="F"?"bg-red-100 text-red-700":"bg-blue-100 text-blue-700"}">${esc(p.name)}</span>`).join("")}</div>
+        </div>`;
+      });
+      h+=`</div>
+        <div class="px-3 py-2 bg-slate-50 border-t border-slate-100">
+          <div class="text-[10px] font-semibold text-slate-400 uppercase tracking-wide mb-1">Resting</div>
+          <div class="flex flex-wrap gap-1">${r.resters.length?r.resters.map(p=>`<span class="text-xs px-1.5 py-0.5 rounded-md bg-slate-200 text-slate-600">${esc(p.name)}</span>`).join(""):`<span class="text-xs text-slate-400">None</span>`}</div>
+        </div>
+      </div>`;
+    });
+    return h;
+  }
+
+  let body=`
+  <div class="rounded-xl border border-slate-200 bg-white p-4">
+    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+      <div class="flex items-center gap-3 flex-wrap">
+        <div>
+          <div class="font-semibold">Match Schedule</div>
+          <div class="text-sm text-slate-500 mt-0.5">${selCnt} players · ${viewSS.courts} courts · ${viewSS.rounds} rounds</div>
+        </div>
+        <!-- Slot switcher inside Schedule tab -->
+        <div class="inline-flex rounded-lg border border-slate-200 bg-slate-50 p-1">
+          <button id="schSlot19" class="px-3 py-1 text-sm rounded-md ${scheduleViewSlot==="19"?"bg-slate-900 text-white":"text-slate-600 hover:bg-slate-100"}">19:00</button>
+          <button id="schSlot21" class="px-3 py-1 text-sm rounded-md ${scheduleViewSlot==="21"?"bg-slate-900 text-white":"text-slate-600 hover:bg-slate-100"}">21:00</button>
+        </div>
+      </div>
+      <div class="no-print flex flex-wrap gap-2">
+        <button id="copyBtn" class="px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-sm hover:bg-slate-50">Copy Text</button>
+        <button id="printBtn" class="px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-sm hover:bg-slate-50">Print</button>
+        <button id="regenBtn" class="px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-sm hover:bg-emerald-700">⚡ Re-generate</button>
+      </div>
+    </div>`;
+
+  if(scheduleViewSlot==="19") body+=`<div class="mt-3 no-print rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">Fitness training 20:50–21:10 uses Court 1 & 2. Adjust on-site.</div>`;
+
+  if(!sch){
+    body+=`<div class="mt-4 rounded-lg border border-slate-200 bg-slate-50 px-3 py-4 text-slate-500">No schedule for this slot yet. Go to Attendance, select ${scheduleViewSlot}:00, and click Generate.</div></div>`;
+    $("tab3").innerHTML=body;
+    $("schSlot19").addEventListener("click",()=>renderScheduleTab("19"));
+    $("schSlot21").addEventListener("click",()=>renderScheduleTab("21"));
+    $("regenBtn").addEventListener("click",()=>{setSlot(scheduleViewSlot);setTab("tab1");render()});
+    return;
+  }
+
+  // Warnings (no-print)
+  if(sch.warnings?.length) body+=`<div class="mt-3 no-print space-y-1">${sch.warnings.map(w=>`<div class="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">${esc(w)}</div>`).join("")}</div>`;
+
+  // Round cards — wrapped in printArea
+  body+=`<div id="printArea" class="mt-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">${roundsHTML(sch)}</div>`;
+
+  // Player summary (no-print)
+  if(sch.playerStats){
+    body+=`<div class="no-print mt-6 font-semibold">Player Summary / Rest Equity</div>
+    <div class="no-print text-xs text-slate-400 mt-0.5 mb-3">Green = at target · Orange = over target. Max spread ≤ 1 round (≤ 2 for B-level).</div>
+    <div class="no-print grid grid-cols-1 sm:grid-cols-2 gap-2">`;
+    [...sch.playerStats].sort((a,b)=>b.plays-a.plays||a.name.localeCompare(b.name)).forEach(p=>{
+      const pct=viewSS.rounds>0?Math.min((p.rests/viewSS.rounds)*100,100):0;
+      const over=p.rests>p.target;
+      body+=`<div class="rounded-lg border border-slate-100 bg-white px-3 py-2 flex items-center gap-3">
+        <div class="min-w-[90px] text-sm font-medium truncate">${esc(p.name)}</div>
+        <div class="text-xs text-slate-400 w-14 flex-shrink-0">${LL[p.level]||p.level}</div>
+        <div class="flex-1 bg-slate-100 rounded-full h-2 overflow-hidden"><div class="h-2 rounded-full ${over?"bg-amber-400":"bg-emerald-500"}" style="width:${pct.toFixed(0)}%"></div></div>
+        <div class="text-xs text-slate-500 w-24 text-right flex-shrink-0">${p.plays}▶ ${p.rests}⏸ (tgt ${p.target})</div>
+      </div>`;
+    });
+    body+=`</div>`;
+  }
+
+  body+=`</div>`;
+  $("tab3").innerHTML=body;
+
+  $("schSlot19").addEventListener("click",()=>renderScheduleTab("19"));
+  $("schSlot21").addEventListener("click",()=>renderScheduleTab("21"));
+  $("copyBtn").addEventListener("click",async()=>{
+    const lines=[`ACE Badminton Schedule — ${scheduleViewSlot}:00`,""];
+    sch.rounds.forEach(r=>{
+      lines.push(`Round ${r.round} (${r.time})`);
+      r.courts.forEach(c=>lines.push(`  Court${c.court} [${c.type}]: ${c.players.map(p=>p.name).join(" / ")}`));
+      lines.push(`  Rest: ${r.resters.length?r.resters.map(p=>p.name).join(", "):"None"}`,"");
+    });
+    const text = lines.join("\n");
+    // Try modern clipboard API first, fall back to execCommand for mobile/file://
+    try {
+      await navigator.clipboard.writeText(text);
+      toast("Copied!","success");
+    } catch {
+      try {
+        const ta = document.createElement("textarea");
+        ta.value = text;
+        ta.style.cssText = "position:fixed;top:0;left:0;opacity:0;";
+        document.body.appendChild(ta);
+        ta.focus(); ta.select();
+        document.execCommand("copy");
+        document.body.removeChild(ta);
+        toast("Copied!","success");
+      } catch {
+        toast("Copy failed — please copy manually","error");
+      }
+    }
+  });
+  $("printBtn").addEventListener("click",()=>{
+    if(!sch){toast("No schedule to print","error");return}
+    const rounds=sch.rounds.length;
+    const cols=rounds<=3?rounds:rounds<=4?4:rounds<=6?3:4;
+    const rows=Math.ceil(rounds/cols);
+    // Round card HTML builder
+    function pRound(r){
+      const courts=r.courts.map(c=>{
+        const bCls=c.type==="XD"?"xd":c.type==="MD"?"md":c.type==="WD"?"wd":c.type==="Singles"?"sg":"db";
+        const ps=c.players.map(p=>`<span class="pm ${p.gender==="F"?"pm-f":"pm-m"}">${p.name}</span>`).join("");
+        return`<div class="court"><div class="ctitle"><span class="clabel">Court ${c.court}</span><span class="badge ${bCls}">${c.type}</span></div><div class="names">${ps}</div></div>`;
+      }).join("");
+      const rps=r.resters.length?r.resters.map(p=>`<span class="rp">${p.name}</span>`).join(""):`<span class="rp" style="color:#cbd5e1">None</span>`;
+      const playing=r.courts.reduce((s,c)=>s+c.players.length,0);
+      return`<div class="round">
+        <div class="rhead"><strong>Round ${r.round}</strong><span>${r.time} · ${playing} playing${r.resters.length?" · "+r.resters.length+" resting":""}</span></div>
+        <div class="courts">${courts}</div>
+        <div class="rest"><div class="rlabel">Resting</div><div class="rnames">${rps}</div></div>
+      </div>`;
+    }
+    const cardsHTML=sch.rounds.map(pRound).join("");
+
+    // In-page print: inject a style that hides everything except our print div
+    // Works on all browsers including mobile without popup/iframe issues
+    const old = document.getElementById("_printStyle");
+    if(old) old.remove();
+    const oldDiv = document.getElementById("_printDiv");
+    if(oldDiv) oldDiv.remove();
+
+    // Create a hidden div with styled print content
+    const printDiv = document.createElement("div");
+    printDiv.id = "_printDiv";
+    printDiv.style.cssText = "display:none;";
+    printDiv.innerHTML = `<h1 style="font-size:10px;font-weight:700;margin-bottom:3px;font-family:system-ui,Arial,sans-serif;">ACE Badminton Schedule &mdash; ${scheduleViewSlot}:00 &nbsp;&middot;&nbsp; ${sch.rounds[0]?.time?.split("–")[0]||""} to ${sch.rounds[sch.rounds.length-1]?.time?.split("–")[1]||""}</h1><div class="_pgrid">${cardsHTML}</div>`;
+    document.body.appendChild(printDiv);
+
+    const style = document.createElement("style");
+    style.id = "_printStyle";
+    style.textContent = `
+      @media print {
+        @page{size:A4 landscape;margin:6mm}
+        body > *{display:none!important}
+        #_printDiv{
+          display:block!important;
+          font-family:system-ui,Arial,sans-serif;
+          font-size:9px;
+          -webkit-print-color-adjust:exact;
+          print-color-adjust:exact;
+          height:210mm;
+          overflow:hidden;
+        }
+        ._pgrid{display:grid;grid-template-columns:repeat(${cols},1fr);gap:3px;height:calc(210mm - 18mm);overflow:hidden}
+        ._pgrid .round{border:1px solid #e2e8f0;border-radius:5px;overflow:hidden;display:flex;flex-direction:column;min-height:0}
+        ._pgrid .rhead{background:#f0fdf4;border-bottom:1px solid #bbf7d0;padding:3px 6px;display:flex;justify-content:space-between;align-items:center;flex-shrink:0}
+        ._pgrid .rhead strong{font-size:9px;font-weight:700}
+        ._pgrid .rhead span{font-size:7.5px;color:#64748b}
+        ._pgrid .courts{flex:1;overflow:hidden;display:flex;flex-direction:column;justify-content:space-evenly}
+        ._pgrid .court{padding:2px 6px;border-bottom:1px solid #f1f5f9}
+        ._pgrid .court:last-child{border-bottom:none}
+        ._pgrid .ctitle{display:flex;justify-content:space-between;align-items:center;margin-bottom:1px}
+        ._pgrid .clabel{font-size:7.5px;font-weight:600;color:#94a3b8}
+        ._pgrid .badge{font-size:7px;font-weight:700;padding:0 4px;border-radius:99px;border:1px solid;line-height:1.6}
+        ._pgrid .xd{background:#f5f3ff;color:#7c3aed;border-color:#c4b5fd}
+        ._pgrid .md{background:#eff6ff;color:#1d4ed8;border-color:#93c5fd}
+        ._pgrid .wd{background:#fdf2f8;color:#be185d;border-color:#f9a8d4}
+        ._pgrid .db{background:#f0fdf4;color:#15803d;border-color:#86efac}
+        ._pgrid .sg{background:#fffbeb;color:#b45309;border-color:#fcd34d}
+        ._pgrid .names{display:flex;flex-wrap:wrap;gap:2px}
+        ._pgrid .pm{font-size:8px;padding:0 4px;border-radius:3px;font-weight:600;line-height:1.6}
+        ._pgrid .pm-f{background:#fee2e2;color:#b91c1c}
+        ._pgrid .pm-m{background:#dbeafe;color:#1d4ed8}
+        ._pgrid .rest{padding:2px 6px;background:#f8fafc;border-top:1px solid #e2e8f0;flex-shrink:0}
+        ._pgrid .rlabel{font-size:7px;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:.05em;margin-bottom:1px}
+        ._pgrid .rnames{display:flex;flex-wrap:wrap;gap:2px}
+        ._pgrid .rp{font-size:7.5px;padding:0 3px;border-radius:3px;background:#e2e8f0;color:#475569;line-height:1.6}
+      }
+    `;
+    document.head.appendChild(style);
+
+    window.print();
+
+    // Clean up after print dialog closes
+    setTimeout(()=>{
+      style.remove();
+      printDiv.remove();
+    }, 1000);
+  });
+  $("regenBtn").addEventListener("click",()=>{setSlot(scheduleViewSlot);setTab("tab1");render()});
+}
+
+// TAB 4 — Payments
+function renderPayments(){
+  const pm=pMap();
+  const ids19=new Set(loadSlot("19").selectedIds.filter(id=>pm.has(id)));
+  const ids21=new Set(loadSlot("21").selectedIds.filter(id=>pm.has(id)));
+  const allIds=[...new Set([...ids19,...ids21])];
+  const pay=loadPay();
+
+  if(!allIds.length){
+    $("tab4").innerHTML=`<div class="rounded-xl border border-slate-200 bg-white p-4">
+      <div class="font-semibold">Payments</div>
+      <div class="mt-3 text-slate-500">No attending players. Select players in Attendance tab first.</div></div>`;
+    return;
+  }
+
+  const rows=allIds.map(id=>{
+    const p=pm.get(id),rec=pay[id]||{};
+    const u18=Boolean(rec.under18),paid=Boolean(rec.paid),a19=ids19.has(id),a21=ids21.has(id);
+    const sess=Number(a19)+Number(a21),rate=u18?30:50,due=sess*rate;
+    return{id,name:p.name,u18,paid,a19,a21,sess,due};
+  }).sort((a,b)=>b.sess-a.sess||a.name.localeCompare(b.name));
+
+  const total=rows.reduce((s,r)=>s+r.due,0);
+  const collected=rows.reduce((s,r)=>s+(r.paid?r.due:0),0);
+  const paidCnt=rows.filter(r=>r.paid).length;
+
+  $("tab4").innerHTML=`
+  <div class="rounded-xl border border-slate-200 bg-white p-4">
+    <div class="font-semibold">Payments</div>
+    <div class="text-sm text-slate-500 mt-0.5">Both slots combined. Toggle Under-18 and Paid status.</div>
+    <div class="mt-3 flex flex-wrap gap-2">
+      ${[`Players: ${rows.length}`,`Paid: ${paidCnt}/${rows.length}`,`Due: ${fmtMoney(total)}`,`Collected: ${fmtMoney(collected)}`,`Outstanding: ${fmtMoney(total-collected)}`].map(t=>`<div class="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm">${t}</div>`).join("")}
+    </div>
+    <button id="exPayBtn" class="mt-3 px-3 py-1.5 rounded-lg bg-slate-900 text-white text-sm hover:bg-slate-700">Export Excel</button>
+
+    <!-- Mobile list -->
+    <div class="mt-4 space-y-2 sm:hidden">
+      ${rows.map(r=>`<div class="rounded-xl border border-slate-200 bg-white px-3 py-2.5 flex items-center gap-1.5">
+        <div class="font-semibold text-sm truncate w-20 flex-shrink-0">${esc(r.name)}</div>
+        <label class="inline-flex items-center gap-1 text-xs text-slate-400 select-none cursor-pointer flex-shrink-0">
+          <input type="checkbox" class="u18-cb w-3.5 h-3.5 accent-slate-900" data-id="${r.id}" ${r.u18?"checked":""}>U18
+        </label>
+        <div class="text-xs text-slate-400 flex-shrink-0">${[r.a19?"19":null,r.a21?"21":null].filter(Boolean).join("+")}</div>
+        <div class="text-sm font-semibold flex-1 text-right flex-shrink-0">${fmtMoney(r.due)}</div>
+        <button class="pay-btn flex-shrink-0 ml-1 px-2 py-1 rounded-lg text-xs font-bold border ${r.paid?"bg-emerald-50 text-emerald-700 border-emerald-200":"bg-rose-50 text-rose-700 border-rose-200"}" data-id="${r.id}">${r.paid?"PAID":"UNPAID"}</button>
+      </div>`).join("")}
+    </div>
+
+    <!-- Desktop table -->
+    <div class="mt-4 overflow-x-auto hidden sm:block">
+      <table class="w-full text-sm border-collapse">
+        <thead><tr>${["Name","U18","19:00","21:00","Sessions","Rate","Due","Status"].map(h=>`<th class="px-3 py-2 text-left text-xs font-semibold text-slate-600 border-b border-slate-200 bg-slate-50">${h}</th>`).join("")}</tr></thead>
+        <tbody>${rows.map(r=>`<tr class="border-b border-slate-100 last:border-0 hover:bg-slate-50">
+          <td class="px-3 py-2 font-medium">${esc(r.name)}</td>
+          <td class="px-3 py-2"><input type="checkbox" class="u18-cb w-4 h-4 accent-slate-900" data-id="${r.id}" ${r.u18?"checked":""}></td>
+          <td class="px-3 py-2">${r.a19?"✓":"-"}</td>
+          <td class="px-3 py-2">${r.a21?"✓":"-"}</td>
+          <td class="px-3 py-2">${r.sess}</td>
+          <td class="px-3 py-2">${fmtMoney(r.u18?30:50)}</td>
+          <td class="px-3 py-2 font-medium">${fmtMoney(r.due)}</td>
+          <td class="px-3 py-2"><button class="pay-btn px-2.5 py-1 rounded text-xs font-bold border ${r.paid?"bg-emerald-50 text-emerald-700 border-emerald-200":"bg-rose-50 text-rose-700 border-rose-200"}" data-id="${r.id}">${r.paid?"PAID":"UNPAID"}</button></td>
+        </tr>`).join("")}</tbody>
+      </table>
+    </div>
+    <div class="mt-3 text-xs text-slate-400">Rates: Adult R50 · Under-18 R30 per slot.</div>
+  </div>`;
+
+  document.querySelectorAll(".u18-cb").forEach(cb=>cb.addEventListener("change",()=>{
+    const p=loadPay();p[cb.dataset.id]={...p[cb.dataset.id],under18:cb.checked};savePay(p);renderPayments();
+  }));
+  document.querySelectorAll(".pay-btn").forEach(btn=>btn.addEventListener("click",()=>{
+    const p=loadPay();p[btn.dataset.id]={...p[btn.dataset.id],paid:!Boolean(p[btn.dataset.id]?.paid)};savePay(p);renderPayments();
+  }));
+  $("exPayBtn").addEventListener("click",()=>{
+    if(!window.XLSX){toast("XLSX unavailable","error");return}
+    const ws=XLSX.utils.json_to_sheet(rows.map(r=>({Name:r.name,Under18:r.u18?1:0,"19:00":r.a19?"Y":"-","21:00":r.a21?"Y":"-",Sessions:r.sess,Rate:r.u18?30:50,Due:r.due,Paid:r.paid?"Y":"N"})));
+    const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,"Payments");
+    XLSX.writeFile(wb,`ace-payments-${new Date().toISOString().slice(0,10)}.xlsx`);
+  });
+}
+
+// ── Player dialog ──────────────────────────────────────────────────────────
+function openDlg(p){
+  editingId=p?p.id:null;
+  $("dlgTitle").textContent=p?"Edit Player":"Add Player";
+  $("dlgName").value=p?p.name:"";
+  $("dlgGender").value=p?p.gender:"M";
+  $("dlgLevel").value=p?p.level:"M";
+  $("dlgSingles").checked=p?p.preferSingle:false;
+  $("playerDialog").showModal();
+}
+function closeDlg(){$("playerDialog").close();editingId=null}
+$("dlgClose").addEventListener("click",closeDlg);
+$("dlgCancel").addEventListener("click",closeDlg);
+$("dlgSave").addEventListener("click",()=>{
+  const name=$("dlgName").value.trim();
+  if(!name){toast("Name required","error");return}
+  if(!editingId&&players.some(p=>p.name.toLowerCase()===name.toLowerCase())){toast("Name already exists","error");return}
+  const p={id:editingId||uid(),name,gender:$("dlgGender").value,level:$("dlgLevel").value,preferSingle:$("dlgSingles").checked};
+  const idx=players.findIndex(x=>x.id===p.id);
+  if(idx>=0)players[idx]=p;else players.push(p);
+  savePlayers(players);closeDlg();renderPlayers();
+});
+
+// ── Import/export helpers ──────────────────────────────────────────────────
+function exportPlayerXls(){
+  if(!window.XLSX){toast("XLSX unavailable","error");return}
+  const ws=XLSX.utils.json_to_sheet(players.map(p=>({Name:p.name,Gender:p.gender,Level:p.level,Singles:p.preferSingle?1:0})));
+  const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,"Players");
+  XLSX.writeFile(wb,"ace-players.xlsx");
+}
+async function importPlayerXls(file){
+  if(!window.XLSX){toast("XLSX unavailable","error");return}
+  try{
+    const buf=await file.arrayBuffer();
+    const wb=XLSX.read(buf,{type:"array"});
+    const rows=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{defval:""});
+    const byName=new Map(players.map(p=>[p.name.toLowerCase(),p]));
+    let added=0;
+    rows.forEach(r=>{
+      const name=String(r.Name||r.name||"").trim();if(!name)return;
+      const lvl=LEVELS.includes(r.Level||r.level)?r.Level||r.level:"M";
+      const gen=r.Gender==="F"||r.gender==="F"?"F":"M";
+      const key=name.toLowerCase();
+      if(!byName.has(key)){const p={id:uid(),name,gender:gen,level:lvl,preferSingle:r.Singles===1||r.Singles===true||r.singles===1||r.singles===true};players.push(p);byName.set(key,p);added++;}
+      else{const p=byName.get(key);p.gender=gen;p.level=lvl;p.preferSingle=r.Singles===1||r.Singles===true||r.singles===1||r.singles===true;}
+    });
+    savePlayers(players);toast(`Imported, ${added} new player(s).`,"success");renderPlayers();
+  }catch(e){toast("Import failed: "+e.message,"error")}
+}
+function exportAttendance(){
+  if(!window.XLSX){toast("XLSX unavailable","error");return}
+  const m=pMap(),sel=[...(ss.selectedIds||[])].map(id=>m.get(id)).filter(Boolean);
+  if(!sel.length){toast("No players selected","error");return}
+  const ws=XLSX.utils.json_to_sheet(sel.map(p=>({Name:p.name,Gender:p.gender,Level:p.level})));
+  const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,"Attendance");
+  XLSX.writeFile(wb,`ace-att-${slot}00-${new Date().toISOString().slice(0,10)}.xlsx`);
+  toast("Attendance exported","success");
+}
+async function importAttendance(file){
+  if(!window.XLSX){toast("XLSX unavailable","error");return}
+  try{
+    const buf=await file.arrayBuffer();
+    const wb=XLSX.read(buf,{type:"array"});
+    const rows=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{defval:""});
+    const byName=new Map(players.map(p=>[p.name.toLowerCase(),p.id]));
+    const matched=[],missing=[];
+    rows.forEach(r=>{const n=String(r.Name||r.name||"").trim();if(!n)return;const id=byName.get(n.toLowerCase());if(id)matched.push(id);else missing.push(n);});
+    const newSel=new Set([...ss.selectedIds,...matched]);
+    ss.selectedIds=[...newSel].slice(0,ss.maxPlayers);ss.schedule=null;saveSlot(ss);
+    toast(`Imported ${matched.length} player(s).${missing.length?" Not found: "+missing.join(", "):""}`,missing.length?"info":"success");
+    renderAttendance();
+  }catch(e){toast("Import failed: "+e.message,"error")}
+}
+
+// ── Master render ──────────────────────────────────────────────────────────
+function render(){
+  if(tab==="tab1")renderAttendance();
+  else if(tab==="tab2")renderPlayers();
+  else if(tab==="tab3")renderScheduleTab();
+  else if(tab==="tab4")renderPayments();
+}
+// ── Init ───────────────────────────────────────────────────────────────────
+players=loadPlayers();
+if(!localStorage.getItem(SK.players))savePlayers(players);
+
+$("tabBtn1").addEventListener("click",()=>{setTab("tab1");render()});
+$("tabBtn2").addEventListener("click",()=>{setTab("tab2");render()});
+$("tabBtn3").addEventListener("click",()=>{setTab("tab3");render()});
+$("tabBtn4").addEventListener("click",()=>{setTab("tab4");render()});
+
+setTab("tab1");
+setSlot("19");
+</script>
+</body>
+</html>
